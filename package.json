@@ -1,0 +1,30 @@
+{
+  "name": "rf360",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Marketplace de Técnicos de Celular",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "type-check": "turbo run type-check",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "db:generate": "turbo run db:generate",
+    "db:push": "turbo run db:push",
+    "db:seed": "turbo run db:seed"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "bmad-method": "^4.44.3",
+    "turbo": "^2.3.0",
+    "typescript": "^5.3.3"
+  },
+  "packageManager": "npm@10.2.0",
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

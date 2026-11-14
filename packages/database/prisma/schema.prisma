@@ -1,0 +1,505 @@
+// This is your Prisma schema file
+// learn more about it at: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ==================== ENUMS ====================
+
+enum UserRole {
+  CLIENTE
+  TECNICO
+  ATENDENTE
+  ADMIN
+}
+
+enum UserStatus {
+  ATIVO
+  INATIVO
+  PENDENTE_APROVACAO
+  SUSPENSO
+}
+
+enum OSStatus {
+  RECEBIDO
+  DIAGNOSTICO
+  ORCAMENTO_ENVIADO
+  APROVADO
+  RECUSADO
+  EM_REPARO
+  CONCLUIDO
+  ENTREGUE
+  DEVOLVIDO
+  CANCELADO
+}
+
+enum ConversaEstado {
+  INICIO
+  MENU
+  ORCAMENTO_MARCA
+  ORCAMENTO_MODELO
+  ORCAMENTO_PROBLEMA
+  ORCAMENTO_RESULTADO
+  ACOMPANHAMENTO
+  ATENDIMENTO_HUMANO
+  ENCERRADO
+}
+
+enum PlanoTipo {
+  GRATUITO
+  PRO
+  PREMIUM
+}
+
+enum BadgeTipo {
+  NOVATO
+  CONFIAVEL
+  EXPERT
+  MESTRE
+  CINCO_ESTRELAS
+  RESPOSTA_RAPIDA
+  ESPECIALISTA_CELULAR
+  ESPECIALISTA_NOTEBOOK
+  ESPECIALISTA_TV
+  ESPECIALISTA_VIDEOGAME
+  ESPECIALISTA_COMPUTADOR
+}
+
+enum MensagemTipo {
+  TEXTO
+  IMAGEM
+  AUDIO
+  DOCUMENTO
+  TEMPLATE
+  INTERATIVO
+}
+
+enum MensagemDirecao {
+  ENTRADA
+  SAIDA
+}
+
+// ==================== MODELS ====================
+
+model User {
+  id            String     @id @default(uuid())
+  email         String     @unique
+  nome          String
+  telefone      String?    @unique
+  avatarUrl     String?
+  role          UserRole   @default(CLIENTE)
+  status        UserStatus @default(ATIVO)
+  emailVerified DateTime?
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  // Relations
+  tecnico   Tecnico?
+  cliente   Cliente?
+  atendente Atendente?
+
+  // Audit
+  createdBy String?
+  updatedBy String?
+
+  @@index([email])
+  @@index([telefone])
+  @@index([role])
+  @@index([status])
+}
+
+model Tecnico {
+  id              String     @id @default(uuid())
+  userId          String     @unique
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Profile
+  bio             String?    @db.Text
+  documentoCpfCnpj String?
+  documentoUrl    String?
+
+  // Location
+  cep             String?
+  endereco        String?
+  cidade          String?
+  estado          String?
+  raioAtendimento Int        @default(10) // km
+  atendeEmDomicilio Boolean  @default(false)
+
+  // Stats
+  avaliacaoMedia  Float      @default(0)
+  totalAvaliacoes Int        @default(0)
+  totalAtendimentos Int      @default(0)
+
+  // Subscription
+  plano           PlanoTipo  @default(GRATUITO)
+  planoValidoAte  DateTime?
+
+  // Status
+  online          Boolean    @default(false)
+  ultimaAtividade DateTime?
+
+  // Timestamps
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  // Relations
+  especialidades  TecnicoEspecialidade[]
+  servicos        TecnicoServico[]
+  ordensServico   OrdemServico[]
+  avaliacoes      Avaliacao[]
+  badges          TecnicoBadge[]
+
+  @@index([cidade])
+  @@index([estado])
+  @@index([plano])
+  @@index([avaliacaoMedia])
+  @@index([online])
+}
+
+model Cliente {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Location
+  cep             String?
+  endereco        String?
+  cidade          String?
+  estado          String?
+
+  // Preferences
+  aceitouMarketing Boolean @default(false)
+  codigoIndicacao String?  @unique
+  indicadoPor     String?
+
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  ordensServico   OrdemServico[]
+  conversas       Conversa[]
+  avaliacoes      Avaliacao[]
+
+  @@index([cidade])
+  @@index([codigoIndicacao])
+}
+
+model Atendente {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  ativo     Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  conversas Conversa[]
+}
+
+// ==================== ESPECIALIDADES E SERVIÇOS ====================
+
+model Especialidade {
+  id        String   @id @default(uuid())
+  nome      String   @unique
+  descricao String?
+  icone     String?
+  ativa     Boolean  @default(true)
+  ordem     Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  tecnicos  TecnicoEspecialidade[]
+  servicos  CatalogoServico[]
+}
+
+model TecnicoEspecialidade {
+  id              String        @id @default(uuid())
+  tecnicoId       String
+  tecnico         Tecnico       @relation(fields: [tecnicoId], references: [id], onDelete: Cascade)
+  especialidadeId String
+  especialidade   Especialidade @relation(fields: [especialidadeId], references: [id], onDelete: Cascade)
+
+  createdAt       DateTime      @default(now())
+
+  @@unique([tecnicoId, especialidadeId])
+}
+
+model CatalogoServico {
+  id              String        @id @default(uuid())
+  especialidadeId String
+  especialidade   Especialidade @relation(fields: [especialidadeId], references: [id])
+
+  nome            String
+  descricao       String?
+  precoMinimo     Float
+  precoMaximo     Float
+  tempoEstimado   Int           // em minutos
+  ativo           Boolean       @default(true)
+
+  // Compatibility
+  marcas          String[]      // ["Apple", "Samsung", "Xiaomi", "Motorola", "Todos"]
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relations
+  tecnicoServicos TecnicoServico[]
+  ordensServico   OrdemServico[]
+
+  @@index([especialidadeId])
+  @@index([ativo])
+}
+
+model TecnicoServico {
+  id               String          @id @default(uuid())
+  tecnicoId        String
+  tecnico          Tecnico         @relation(fields: [tecnicoId], references: [id], onDelete: Cascade)
+  catalogoServicoId String
+  catalogoServico  CatalogoServico @relation(fields: [catalogoServicoId], references: [id])
+
+  precoPersonalizado Float?
+  tempoEstimado    Int?            // em minutos
+  ativo            Boolean         @default(true)
+  observacoes      String?
+  ordem            Int             @default(0)
+
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@unique([tecnicoId, catalogoServicoId])
+}
+
+// ==================== ORDEM DE SERVIÇO ====================
+
+model OrdemServico {
+  id              String          @id @default(uuid())
+  numero          String          @unique // RF-YYYYMMDD-XXXX
+
+  clienteId       String
+  cliente         Cliente         @relation(fields: [clienteId], references: [id])
+  tecnicoId       String
+  tecnico         Tecnico         @relation(fields: [tecnicoId], references: [id])
+  servicoId       String?
+  servico         CatalogoServico? @relation(fields: [servicoId], references: [id])
+
+  // Aparelho
+  aparelhoMarca   String
+  aparelhoModelo  String
+  aparelhoImei    String?
+  aparelhoCor     String?
+
+  // Problema
+  defeitoRelatado String          @db.Text
+  defeitoEncontrado String?       @db.Text
+
+  // Status
+  status          OSStatus        @default(RECEBIDO)
+
+  // Valores
+  valorOrcado     Float?
+  valorAprovado   Float?
+  valorFinal      Float?
+  desconto        Float           @default(0)
+
+  // Datas
+  dataEntrada     DateTime        @default(now())
+  previsaoEntrega DateTime?
+  dataAprovacao   DateTime?
+  dataConclusao   DateTime?
+  dataEntrega     DateTime?
+
+  // Observações
+  observacoesInternas String?     @db.Text
+  observacoesCliente  String?     @db.Text
+
+  // Timestamps
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Relations
+  eventos         OrdemServicoEvento[]
+  fotos           OrdemServicoFoto[]
+  avaliacao       Avaliacao?
+
+  @@index([numero])
+  @@index([clienteId])
+  @@index([tecnicoId])
+  @@index([status])
+  @@index([dataEntrada])
+}
+
+model OrdemServicoEvento {
+  id            String       @id @default(uuid())
+  ordemServicoId String
+  ordemServico  OrdemServico @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
+
+  statusAnterior OSStatus?
+  statusNovo    OSStatus
+  observacao    String?      @db.Text
+  usuarioId     String?
+
+  createdAt     DateTime     @default(now())
+
+  @@index([ordemServicoId])
+  @@index([createdAt])
+}
+
+model OrdemServicoFoto {
+  id            String       @id @default(uuid())
+  ordemServicoId String
+  ordemServico  OrdemServico @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
+
+  url           String
+  tipo          String       // "antes" | "depois"
+  descricao     String?
+
+  createdAt     DateTime     @default(now())
+
+  @@index([ordemServicoId])
+}
+
+// ==================== AVALIAÇÕES E BADGES ====================
+
+model Avaliacao {
+  id            String       @id @default(uuid())
+  ordemServicoId String      @unique
+  ordemServico  OrdemServico @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
+  tecnicoId     String
+  tecnico       Tecnico      @relation(fields: [tecnicoId], references: [id])
+  clienteId     String
+  cliente       Cliente      @relation(fields: [clienteId], references: [id])
+
+  nota          Int          // 1-5
+  comentario    String?      @db.Text
+
+  createdAt     DateTime     @default(now())
+
+  @@index([tecnicoId])
+  @@index([nota])
+  @@index([createdAt])
+}
+
+model Badge {
+  id          String    @id @default(uuid())
+  tipo        BadgeTipo @unique
+  nome        String
+  descricao   String
+  icone       String
+  criterio    String    @db.Text // Descrição do critério
+  ativo       Boolean   @default(true)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  tecnicos    TecnicoBadge[]
+}
+
+model TecnicoBadge {
+  id        String   @id @default(uuid())
+  tecnicoId String
+  tecnico   Tecnico  @relation(fields: [tecnicoId], references: [id], onDelete: Cascade)
+  badgeId   String
+  badge     Badge    @relation(fields: [badgeId], references: [id])
+
+  conquistadoEm DateTime @default(now())
+
+  @@unique([tecnicoId, badgeId])
+}
+
+// ==================== CONVERSAS WHATSAPP ====================
+
+model Conversa {
+  id            String         @id @default(uuid())
+  clienteId     String?
+  cliente       Cliente?       @relation(fields: [clienteId], references: [id])
+  atendenteId   String?
+  atendente     Atendente?     @relation(fields: [atendenteId], references: [id])
+
+  telefone      String         // Telefone do contato (E.164)
+  estado        ConversaEstado @default(INICIO)
+  contexto      Json?          // Dados do estado atual
+
+  ultimaMensagem DateTime?
+  naoLidas      Int            @default(0)
+
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  // Relations
+  mensagens     Mensagem[]
+
+  @@index([telefone])
+  @@index([clienteId])
+  @@index([atendenteId])
+  @@index([estado])
+  @@index([ultimaMensagem])
+}
+
+model Mensagem {
+  id          String          @id @default(uuid())
+  conversaId  String
+  conversa    Conversa        @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+
+  waMessageId String?         @unique // ID da mensagem no WhatsApp
+  tipo        MensagemTipo    @default(TEXTO)
+  direcao     MensagemDirecao
+  conteudo    String          @db.Text
+  mediaUrl    String?
+
+  status      String?         // sent, delivered, read, failed
+  erro        String?
+
+  createdAt   DateTime        @default(now())
+
+  @@index([conversaId])
+  @@index([waMessageId])
+  @@index([createdAt])
+}
+
+// ==================== NOTIFICAÇÕES ====================
+
+model Notificacao {
+  id          String   @id @default(uuid())
+  userId      String
+
+  titulo      String
+  mensagem    String   @db.Text
+  tipo        String   // "os_status", "avaliacao", "badge", "sistema"
+  lida        Boolean  @default(false)
+  link        String?
+
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([lida])
+  @@index([createdAt])
+}
+
+// ==================== CONFIGURAÇÕES ====================
+
+model Configuracao {
+  id        String   @id @default(uuid())
+  chave     String   @unique
+  valor     Json
+  descricao String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
